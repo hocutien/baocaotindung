@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Báo cáo tín dụng – design by 7410-Mạnh Lắm (bản vá 14/10)</title>
+<title>Báo cáo tín dụng – design by 7410-Mạnh Lắm (bản vá 27/10)</title>
 <style>
 :root{--bg:#f4f6f9;--card:#fff;--ink:#1d2733;--mut:#6b7684;--line:#dde3ea;--pri:#1f4e79;--pri2:#2e6da4;--g1:#006633;--g2:#54987a;--g3:#a8cbba;--r1:#c00000;--r2:#d55454;--r3:#eaa8a8;--good:#0a7a3a;--bad:#c00000;--sub:#deebf7;--tot:#bdd7ee}
 *{box-sizing:border-box}
@@ -2391,6 +2391,7 @@ function() {
     })
   }
   async function z(n, c) {
+    // VÁ 27/10: nhận diện theo TÊN file trước, KHÔNG đọc nội dung; chỉ đọc file chưa rõ loại, theo từng cửa sổ 7 ngày từ ngày mới nhất lùi dần, dừng khi đủ file cần
     var i = Array.prototype.map.call(n, function(n) {
       return n instanceof File ? {
         file: n
@@ -2401,14 +2402,29 @@ function() {
     if (i.length) {
       var r = "add" === c ? o.pool.slice() : [],
         u = {},
-        d = 0;
+        chua = [],
+        NGAY = 864e5,
+        tenGon = function(x) {
+          return String(x || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/g, "d").replace(/[\s_\-.]/g, "")
+        },
+        loaiTheoTen = function(f) {
+          var g = e.detectType(f.name, []),
+            a = tenGon(f.name);
+          if (/lnaq37/.test(a)) return "bo";
+          if (!g && /^sk\d/.test(a)) g = "saoke";
+          if (!g && /^lnaq11cd\d/.test(a) && f.size < 1048576) g = "the";
+          if (!g && /^lnaq/.test(a) && /11/.test(a) && f.size >= 1048576) return "bo"; // lnaq11 toàn bộ (vay + thẻ, vài MB): không phải file nợ thẻ
+          return g
+        };
       r.forEach(function(n) {
         u[U(n.file)] = 1
       });
+      j("Đang nhận diện " + i.length + " file theo tên…", "busy");
       for (const n of i) {
         var s = n.file;
-        if (d++, !u[U(s)])
-          if (u[U(s)] = 1, j("Đang nhận diện file " + d + "/" + i.length + ": " + D(s.name), "busy"), /\.json$/i.test(s.name)) /cau_hinh/i.test(s.name) && r.push({
+        if (u[U(s)]) continue;
+        if (u[U(s)] = 1, /\.json$/i.test(s.name)) {
+          /cau_hinh/i.test(s.name) && r.push({
             file: s,
             type: "cfgshared",
             date: new Date(s.lastModified),
@@ -2416,10 +2432,35 @@ function() {
             dateSrc: "ngày sửa file",
             name: s.name
           });
-          else {
-            var g = e.detectType(s.name, []);
-            if (["gl790002", "glLai", "lnlr20", "lnwc02"].indexOf(g) < 0) try {
-              var m = await F(s, {
+          continue
+        }
+        var g = loaiTheoTen(s);
+        if ("bo" === g) continue;
+        if (n.grp) {
+          if (g && g !== n.grp) continue;
+          g = n.grp
+        }
+        var y = e.dateFromName(s.name),
+          it = {
+            file: s,
+            type: g,
+            date: y || new Date(s.lastModified),
+            dateSrc: y ? "tên file" : "ngày sửa file",
+            mt: s.lastModified,
+            name: s.webkitRelativePath || s.name
+          };
+        r.push(it), g || chua.push(it)
+      }
+      chua.sort(function(n, t) {
+        return t.date - n.date
+      });
+      var daDoc = 0,
+        docNoiDung = async function(ds) {
+          for (const it of ds) {
+            if (it.daDoc) continue;
+            it.daDoc = 1, daDoc++, j("Đang đọc nội dung file chưa rõ loại " + daDoc + ": " + D(it.file.name), "busy");
+            try {
+              var m = await F(it.file, {
                   sheetRows: 15,
                   sheets: 0
                 }),
@@ -2427,27 +2468,81 @@ function() {
                   header: 1,
                   defval: ""
                 }),
-                v = e.detectType(s.name, (b[0] || []).map(t.keyNorm));
-              v || b.some(function(n) {
-                var a = e.detectType(s.name, n.map(t.keyNorm));
+                v = "";
+              b.some(function(n) {
+                var a = e.detectType(it.file.name, n.map(t.keyNorm));
                 return !!a && (v = a, !0)
-              }), v && (g = v)
+              }), "the" === v && it.file.size >= 1048576 && (v = ""), v && (it.type = v)
             } catch (n) {}
-            if (n.grp) {
-              if (g && g !== n.grp) continue;
-              g = n.grp
-            }
-            var y = e.dateFromName(s.name);
-            r.push({
-              file: s,
-              type: g,
-              date: y || new Date(s.lastModified),
-              dateSrc: y ? "tên file" : "ngày sửa file",
-              mt: s.lastModified,
-              name: s.webkitRelativePath || s.name
-            })
           }
+        },
+        conLai = function() {
+          return chua.filter(function(n) {
+            return !n.daDoc
+          })
+        },
+        cungNgay = function(n, t) {
+          return n && t && n.getFullYear() === t.getFullYear() && n.getMonth() === t.getMonth() && n.getDate() === t.getDate()
+        },
+        duFile = function() {
+          var sk = r.filter(function(n) {
+            return "saoke" === n.type
+          }).sort(function(n, t) {
+            return t.date - n.date
+          });
+          if (!sk.length) return {
+            du: !1
+          };
+          var K = sk[0].date,
+            kd = o.cfg.opt.kyDau,
+            T = "thang" === kd ? new Date(K.getFullYear(), K.getMonth(), 0) : "nam" === kd ? new Date(K.getFullYear() - 1, 11, 31) : null,
+            hopDau = function(n) {
+              return n.date < K && (!T || n.date <= T)
+            },
+            dau = sk.filter(hopDau)[0],
+            th = r.filter(function(n) {
+              return "the" === n.type
+            }),
+            okThe = th.length > 0,
+            okTheDau = !dau || th.some(function(n) {
+              return n.date <= dau.date
+            });
+          return {
+            du: !!dau && okThe && okTheDau,
+            T: T || (dau ? null : new Date(K.getTime() - NGAY))
+          }
+        };
+      if (chua.length) {
+        var moc = chua[0].date,
+          r0 = r.filter(function(n) {
+            return n.type && n.date
+          });
+        r0.forEach(function(n) {
+          n.date > moc && n.date <= new Date && (moc = n.date)
+        });
+        var duoi = new Date(moc.getTime() - 7 * NGAY),
+          thuT = !1;
+        await docNoiDung(conLai().filter(function(n) {
+          return n.date >= duoi
+        }));
+        for (;;) {
+          var k = duFile();
+          if (k.du || !conLai().length) break;
+          if (k.T && !thuT) {
+            thuT = !0;
+            var tT = k.T;
+            await docNoiDung(conLai().filter(function(n) {
+              return n.date <= tT && n.date >= new Date(tT.getTime() - 7 * NGAY)
+            }));
+            continue
+          }
+          var tren = duoi;
+          duoi = new Date(duoi.getTime() - 7 * NGAY), await docNoiDung(conLai().filter(function(n) {
+            return n.date < tren && n.date >= duoi
+          }))
+        }
       }
+      o.boQuaDoc = conLai().length;
       o.pool = r, a("#ngay").value = "", o.qhTay = !1, await async function() { // VÁ 04/10: nạp mới thì ngày QH về mặc định
           var n = o.pool.filter(function(n) {
             return "cfgshared" === n.type
@@ -2542,7 +2637,7 @@ function() {
         C = r.filter(function(n) {
           return !n.type
         }).length;
-      k.length ? (j("", ""), _n("data")) : (j("Đã nhận " + r.length + " file (" + C + " file không nhận diện được, bỏ qua). Đang xử lý…", "busy"), bn(!1))
+      k.length ? (j("", ""), _n("data")) : (j("Đã nhận " + r.length + " file (" + (C - (o.boQuaDoc || 0)) + " file không nhận diện được" + (o.boQuaDoc ? ", " + o.boQuaDoc + " file cũ chưa rõ loại không cần đọc" : "") + "). Đang xử lý…", "busy"), bn(!1))
     } else j("Thư mục không có file Excel nào.", "err")
   }
   var Z = "function" == typeof window.showDirectoryPicker;
